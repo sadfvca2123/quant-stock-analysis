@@ -1,0 +1,3 @@
+# -*- coding: utf-8 -*-
+"""通知模块"""
+from .wechat import WeChatNotifier

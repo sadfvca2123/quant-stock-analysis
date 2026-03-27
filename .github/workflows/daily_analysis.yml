@@ -1,0 +1,51 @@
+name: Daily Quant Analysis
+
+on:
+  schedule:
+    # 每天 18:00 北京时间 (10:00 UTC)
+    - cron: '0 10 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      stocks:
+        description: 'Stock codes (comma separated)'
+        required: false
+        default: ''
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Run analysis
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          STOCK_LIST: ${{ secrets.STOCK_LIST }}
+          WECHAT_WEBHOOK_URL: ${{ secrets.WECHAT_WEBHOOK_URL }}
+          TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+        run: |
+          if [ -n "${{ github.event.inputs.stocks }}" ]; then
+            python main.py --stocks "${{ github.event.inputs.stocks }}"
+          else
+            python main.py
+        shell: bash
+      
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: analysis-results
+          path: results/
+          retention-days: 7

@@ -1,0 +1,14 @@
+# 智能量化选股分析系统
+# 依赖包
+akshare>=1.14.0
+tushare>=1.4.0
+pandas>=2.0.0
+numpy>=1.24.0
+ta>=0.11.0
+scipy>=1.11.0
+openai>=1.0.0
+fastapi>=0.104.0
+uvicorn>=0.24.0
+httpx>=0.25.0
+python-dotenv>=1.0.0
+jinja2>=3.1.0
