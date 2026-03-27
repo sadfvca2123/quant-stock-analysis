@@ -2,7 +2,6 @@ name: Daily Quant Analysis
 
 on:
   schedule:
-    # 每天 18:00 北京时间 (10:00 UTC)
     - cron: '0 10 * * 1-5'
   workflow_dispatch:
     inputs:
@@ -24,8 +23,7 @@ jobs:
           python-version: '3.11'
       
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
       
       - name: Run analysis
         env:
@@ -35,12 +33,7 @@ jobs:
           STOCK_LIST: ${{ secrets.STOCK_LIST }}
           WECHAT_WEBHOOK_URL: ${{ secrets.WECHAT_WEBHOOK_URL }}
           TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
-        run: |
-          if [ -n "${{ github.event.inputs.stocks }}" ]; then
-            python main.py --stocks "${{ github.event.inputs.stocks }}"
-          else
-            python main.py
-        shell: bash
+        run: python main.py
       
       - name: Upload results
         if: always()
