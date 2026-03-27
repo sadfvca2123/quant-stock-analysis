@@ -3,25 +3,16 @@
 ===================================
 智能量化选股分析系统 - 主程序
 ===================================
-功能:
-1. 多数据源获取行情 (AkShare / Tushare / QMT)
-2. 量化因子计算 (MA, MACD, RSI, KDJ, BOLL等)
-3. 多因子选股模型
-4. AI 智能分析 (DeepSeek)
-5. 企业微信推送
-6. Web 服务 (FastAPI)
-7. GitHub Actions 定时执行
 """
 import argparse
 import logging
 import sys
-from datetime import datetime
-from pathlib import Path
 import config
-from data import DataProvider
-from quant import StockScreener
-from ai import AIAnalyzer
-from notify import WeChatNotifier
+from data.provider import DataProvider
+from quant.factors import calc_all_factors
+from quant.stock_screener import StockScreener
+from ai.analyzer import AIAnalyzer
+from notify.wechat import WeChatNotifier
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,12 +33,13 @@ def run_analysis(stock_list: list = None, send_notify: bool = True):
     # 2. 初始化数据提供者
     provider = DataProvider(source="akshare")
     
-    # 3. 获取历史数据
+    # 3. 获取历史数据并计算因子
     stock_data = {}
     for code in stock_list:
         try:
             df = provider.get_stock_history(code, days=250)
             if df is not None and len(df) > 60:
+                df = calc_all_factors(df)
                 stock_data[code] = df
                 logger.info(f"获取 {code} 数据成功: {len(df)} 条")
             else:
@@ -57,7 +49,7 @@ def run_analysis(stock_list: list = None, send_notify: bool = True):
     
     if not stock_data:
         logger.error("没有获取到任何股票数据")
-        return
+        return []
     
     # 4. 多因子选股
     screener = StockScreener(stock_data)
@@ -66,51 +58,57 @@ def run_analysis(stock_list: list = None, send_notify: bool = True):
     
     logger.info(f"选股结果: {len(recommendations)} 只")
     
+    if recommendations.empty:
+        logger.warning("没有符合条件的股票")
+        return []
+    
     # 5. AI 深度分析
     ai_analyzer = AIAnalyzer()
     analysis_results = []
     
     for _, row in recommendations.iterrows():
-        code = row['code']
-        df = stock_data[code]
+        # 列名是 stock_code
+        code = row.get('stock_code', row.get('code', ''))
+        if not code:
+            continue
+            
+        df = stock_data.get(code)
+        if df is None:
+            continue
+            
         latest = df.iloc[-1]
         
         stock_info = {
             'name': code,
-            'close': latest.get('close', 0),
-            'pct_change': latest.get('pct_change', 0),
-            'MA5': latest.get('MA5', 0),
-            'MA10': latest.get('MA10', 0),
-            'MA20': latest.get('MA20', 0),
-            'RSI': latest.get('RSI', 0),
-            'MACD': latest.get('MACD', 0),
-            'KDJ_K': latest.get('KDJ_K', 0),
+            'close': float(latest.get('close', 0)),
+            'pct_change': float(latest.get('pct_change', 0)),
+            'MA5': float(latest.get('MA5', 0)) if 'MA5' in latest.index else 0.0,
+            'MA10': float(latest.get('MA10', 0)) if 'MA10' in latest.index else 0.0,
+            'MA20': float(latest.get('MA20', 0)) if 'MA20' in latest.index else 0.0,
+            'RSI': float(latest.get('RSI', 50)) if 'RSI' in latest.index else 50.0,
+            'MACD': float(latest.get('MACD', 0)) if 'MACD' in latest.index else 0.0,
+            'KDJ_K': float(latest.get('KDJ_K', 50)) if 'KDJ_K' in latest.index else 50.0,
         }
+        
+        score = float(row.get('total_score', 0))
+        advice = row.get('reason', '综合评分')
         
         try:
             ai_analysis = ai_analyzer.analyze_stock(code, stock_info)
-            analysis_results.append({
-                'code': code,
-                'name': code,
-                'close': latest.get('close', 0),
-                'pct_change': latest.get('pct_change', 0),
-                'score': row['total_score'],
-                'advice': row.get('advice', '观望'),
-                'emoji': '🟢' if row['total_score'] > 70 else ('🟡' if row['total_score'] > 50 else '🔴'),
-                'ai_analysis': ai_analysis
-            })
         except Exception as e:
             logger.error(f"AI分析 {code} 失败: {e}")
-            analysis_results.append({
-                'code': code,
-                'name': code,
-                'close': latest.get('close', 0),
-                'pct_change': latest.get('pct_change', 0),
-                'score': row['total_score'],
-                'advice': row.get('advice', '观望'),
-                'emoji': '🟢' if row['total_score'] > 70 else ('🟡' if row['total_score'] > 50 else '🔴'),
-                'ai_analysis': 'AI分析失败'
-            })
+            ai_analysis = "AI分析暂时不可用"
+        
+        analysis_results.append({
+            'code': code,
+            'name': code,
+            'close': stock_info['close'],
+            'pct_change': stock_info['pct_change'],
+            'score': score,
+            'advice': advice,
+            'emoji': '🟢' if score > 0.6 else ('🟡' if score > 0.4 else '🔴'),
+            'ai_analysis': ai_analysis
+        })
     
     # 6. 生成报告
     if send_notify and config.WECHAT_WEBHOOK_URL:
@@ -123,7 +121,7 @@ def run_analysis(stock_list: list = None, send_notify: bool = True):
     logger.info("📊 分析结果摘要")
     logger.info("="*50)
     for r in analysis_results:
-        logger.info(f"{r['emoji']} {r['code']}: {r['advice']} (得分: {r['score']:.1f})")
+        logger.info(f"{r['emoji']} {r['code']}: {r['advice']} (得分: {r['score']:.2f})")
     
     return analysis_results
 
